@@ -29,19 +29,15 @@ env/
 .DS_Store
 Thumbs.db
 
-# Jupyter
+# Jupyter checkpoints
 .ipynb_checkpoints/
 
 # Logs
 *.log
 
-# Large data & model files
+# Large data files (too big for GitHub)
 *.zip
-*.csv
-*.h5
-*.pkl
-*.pt
-*.pth
+Stock_Project/archive/stocks_df.csv
 
 # Node (if any)
 node_modules/
