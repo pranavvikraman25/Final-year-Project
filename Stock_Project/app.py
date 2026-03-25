@@ -178,103 +178,39 @@ st.markdown("""
 # =============================================================================
 
 
-# Nifty 50 stock tickers (Yahoo Finance format for NSE)
-NIFTY50_STOCKS = [
-    'RELIANCE', 'TCS', 'HDFCBANK', 'BHARTIARTL', 'ICICIBANK',
-    'INFOSYS', 'SBIN', 'HINDUNILVR', 'ITC', 'LT',
-    'KOTAKBANK', 'AXISBANK', 'BAJFINANCE', 'MARUTI', 'ASIANPAINT',
-    'HCLTECH', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND', 'POWERGRID',
-    'TITAN', 'BAJAJFINSV', 'NTPC', 'M&M', 'SUNPHARMA',
-    'ONGC', 'TATAMOTORS', 'COALINDIA', 'TECHM', 'TATASTEEL',
-    'JSWSTEEL', 'ADANIENT', 'CIPLA', 'DRREDDY', 'GRASIM',
-    'DIVISLAB', 'BPCL', 'EICHERMOT', 'HINDALCO', 'INDUSINDBK',
-    'SBILIFE', 'BAJAJ-AUTO', 'ADANIPORTS', 'BRITANNIA', 'APOLLOHOSP',
-    'TATACONSUM', 'HEROMOTOCO', 'LTIM', 'HDFCLIFE', 'UPL'
-]
-
-@st.cache_data(show_spinner="Loading live market data from NSE...", ttl=3600)
+@st.cache_data(show_spinner="Loading NSE market data...")
 def load_data():
-    """Load stock data using yfinance (live NSE data)"""
-    import yfinance as yf
-    from datetime import datetime, timedelta
-
-    end_date = datetime.today()
-    start_date = end_date - timedelta(days=5 * 365)  # 5 years of data
-
-    all_stocks = []
-    failed = []
-
-    progress = st.progress(0, text="Fetching Nifty 50 stock data...")
-    total = len(NIFTY50_STOCKS)
-
-    for i, ticker in enumerate(NIFTY50_STOCKS):
-        try:
-            yf_ticker = ticker + '.NS'
-            df = yf.download(yf_ticker, start=start_date, end=end_date,
-                             progress=False, auto_adjust=True)
-            if df.empty or len(df) < 60:
-                failed.append(ticker)
-                continue
-
-            df = df.reset_index()
-            # Flatten MultiIndex columns if present
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = [col[0] if col[1] == '' else col[0] for col in df.columns]
-
-            df['Stock'] = ticker
-            df = df.rename(columns={'Adj Close': 'Close'}) if 'Adj Close' in df.columns else df
-            df['Change Pct'] = df['Close'].pct_change() * 100
-
-            # Keep only required columns
-            cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Stock', 'Change Pct']
-            df = df[[c for c in cols if c in df.columns]]
-
-            # Cast types
-            for col in ['Open', 'High', 'Low', 'Close', 'Change Pct']:
-                if col in df.columns:
-                    df[col] = df[col].astype('float32')
-            if 'Volume' in df.columns:
-                df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0).astype('int64')
-
-            all_stocks.append(df)
-        except Exception:
-            failed.append(ticker)
-
-        progress.progress((i + 1) / total, text=f"Fetching {ticker}... ({i+1}/{total})")
-
-    progress.empty()
-
-    if failed:
-        st.warning(f"Could not fetch data for: {', '.join(failed)}")
-
-    if not all_stocks:
-        st.error("Failed to fetch any stock data. Check your internet connection.")
-        return None, None
-
-    stocks_df = pd.concat(all_stocks, ignore_index=True)
-    stocks_df['Stock'] = stocks_df['Stock'].astype('category')
-
-    # --- NSE Indexes ---
-    # Try loading local nse_indexes.csv first, else build from Nifty 50 index
+    """Load NSE stock data from bundled sample CSVs."""
     try:
-        nse_indexes = pd.read_csv('archive/nse_indexes.csv', parse_dates=['Date'])
-    except Exception:
-        try:
-            nifty = yf.download('^NSEI', start=start_date, end=end_date,
-                                progress=False, auto_adjust=True)
-            if not nifty.empty:
-                nifty = nifty.reset_index()
-                if isinstance(nifty.columns, pd.MultiIndex):
-                    nifty.columns = [col[0] for col in nifty.columns]
-                nifty['Index'] = 'NIFTY 50'
-                nifty['Change Pct'] = nifty['Close'].pct_change() * 100
-                nse_indexes = nifty[['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Index', 'Change Pct']]
-            else:
-                nse_indexes = stocks_df.rename(columns={'Stock': 'Index'}).head(0)
-        except Exception:
-            nse_indexes = stocks_df.rename(columns={'Stock': 'Index'}).head(0)
+        # --- Stocks ---
+        stocks_df = pd.read_csv(
+            'archive/sample/stocks_sample.csv',
+            parse_dates=['Date'],
+            dtype={
+                'Open': 'float32', 'High': 'float32',
+                'Low': 'float32', 'Close': 'float32',
+                'Volume': 'int64', 'Change Pct': 'float32'
+            }
+        )
+        stocks_df['Stock'] = stocks_df['Stock'].astype('category')
 
-    return nse_indexes, stocks_df
+        # --- Indexes ---
+        try:
+            nse_indexes = pd.read_csv(
+                'archive/sample/indexes_sample.csv',
+                parse_dates=['Date']
+            )
+        except Exception:
+            # Build a synthetic index from RELIANCE as fallback
+            rel = stocks_df[stocks_df['Stock'] == 'RELIANCE'].copy()
+            rel['Index'] = 'NIFTY 50'
+            nse_indexes = rel.rename(columns={'Stock': '_drop'}).drop(columns=['_drop'], errors='ignore')
+
+        return nse_indexes, stocks_df
+
+    except Exception as e:
+        st.error(f"Failed to load data: {e}")
+        return None, None
 
 
 
