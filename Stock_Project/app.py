@@ -180,37 +180,51 @@ st.markdown("""
 
 @st.cache_data(show_spinner="Loading NSE market data...")
 def load_data():
-    """Load NSE stock data from bundled sample CSVs."""
-    try:
-        # --- Stocks ---
-        stocks_df = pd.read_csv(
-            'archive/sample/stocks_sample.csv',
-            parse_dates=['Date'],
-            dtype={
-                'Open': 'float32', 'High': 'float32',
-                'Low': 'float32', 'Close': 'float32',
-                'Volume': 'int64', 'Change Pct': 'float32'
-            }
-        )
-        stocks_df['Stock'] = stocks_df['Stock'].astype('category')
+    """Load NSE stock data — tries full CSV first, falls back to bundled sample."""
 
-        # --- Indexes ---
+    # --- Stocks ---
+    stocks_df = None
+    for path in ['archive/stocks_df.csv', 'archive/sample/stocks_sample.csv']:
         try:
-            nse_indexes = pd.read_csv(
-                'archive/sample/indexes_sample.csv',
-                parse_dates=['Date']
+            stocks_df = pd.read_csv(
+                path, parse_dates=['Date'],
+                dtype={
+                    'Open': 'float32', 'High': 'float32',
+                    'Low': 'float32', 'Close': 'float32',
+                    'Change Pct': 'float32'
+                }
             )
+            if 'Volume' in stocks_df.columns:
+                stocks_df['Volume'] = pd.to_numeric(
+                    stocks_df['Volume'], errors='coerce'
+                ).fillna(0).astype('int64')
+            stocks_df['Stock'] = stocks_df['Stock'].astype('category')
+            break
         except Exception:
-            # Build a synthetic index from RELIANCE as fallback
-            rel = stocks_df[stocks_df['Stock'] == 'RELIANCE'].copy()
-            rel['Index'] = 'NIFTY 50'
-            nse_indexes = rel.rename(columns={'Stock': '_drop'}).drop(columns=['_drop'], errors='ignore')
+            continue
 
-        return nse_indexes, stocks_df
-
-    except Exception as e:
-        st.error(f"Failed to load data: {e}")
+    if stocks_df is None or stocks_df.empty:
+        st.error("Failed to load stock data. Data files not found.")
         return None, None
+
+    # --- Indexes ---
+    nse_indexes = None
+    for path in ['archive/nse_indexes.csv', 'archive/sample/indexes_sample.csv']:
+        try:
+            nse_indexes = pd.read_csv(path, parse_dates=['Date'])
+            break
+        except Exception:
+            continue
+
+    if nse_indexes is None:
+        # Build a minimal index from RELIANCE as last resort
+        rel = stocks_df[stocks_df['Stock'] == stocks_df['Stock'].cat.categories[0]].copy()
+        rel = rel.rename(columns={'Stock': 'Index'})
+        rel['Index'] = 'NIFTY 50'
+        nse_indexes = rel
+
+    return nse_indexes, stocks_df
+
 
 
 
